@@ -29,11 +29,50 @@ public:
     vector<unsigned> boxesForGauss(double sigma, unsigned count)
     {
         double wIdeal = sqrt((12 * sigma * sigma / count) + 1);
+        int wl = floor(wIdeal);
+        if (wl % 2 == 0) { wl--; }
+        double wu = wl + 2;
+
+        double mIdeal = 12 * sigma * sigma - count * (wl * wl - 4 * wl - 3);
+        mIdeal /= (-4 * (wl + 1));
+        double m = round(mIdeal);
+
+        actualSigma = sqrt((m * wl * wl + (count - m) * wu * wu - count) / 12);
+
+        vector<unsigned> result;
+        for (unsigned i = 0; i < count; i++) { result.push_back(i < m ? wl : wu); }
+        return result;
     }
-    double absError();
+
+    Mat gaussBlur_ocvBoxFilter(double radius)
+    {
+        vector<unsigned> boxes = boxesForGauss(radius, 3);
+        Mat temp_in = m_in, out;
+        for (size_t i = 0; i < boxes.size(); i++)
+        {
+            boxFilter(temp_in, out, -1, Size((boxes[i] - 1) * 0.5, (boxes[i] - 1) * 0.5));
+            temp_in = out;
+        }
+        return out;
+    }
+
+    double absError()
+    {
+        const double radius = 7;
+        Mat approx = gaussBlur_ocvBoxFilter(radius);
+        Mat original;
+        GaussianBlur(m_in, original, Size(radius, radius), actualSigma);
+        Mat delta;
+        compare(approx, original, delta, CMP_NE);
+        double cntNE = countNonZero(delta);
+        std::cout << "Count non equal pixels = " << cntNE << '\n';
+        std::cout << "Actual sigma = " << actualSigma << '\n';
+        return cntNE / (delta.rows * delta.cols);
+    }
 private:
     Mat m_in;
-}
+    double actualSigma;
+};
 
 class QRDetect
 {
@@ -52,9 +91,6 @@ protected:
     vector<Point2f> getQuadrilateral(vector<Point2f> angle_list);
     bool testBypassRoute(vector<Point2f> hull, int start, int finish);
     inline double getCosVectors(Point2f a, Point2f b, Point2f c);
-
-    vector<size_t> boxesForApprox(double sigma, size_t count);
-    bool gaussianApproxFilter(Mat in, Mat out);
 
     Mat barcode, bin_barcode, straight_barcode;
     vector<Point2f> localization_points, transformation_points;
@@ -82,6 +118,11 @@ void QRDetect::init(const Mat& src, double eps_vertical_, double eps_horizontal_
 
     eps_vertical   = eps_vertical_;
     eps_horizontal = eps_horizontal_;
+
+    ApproxGaussianBlur apprxGauss(barcode);
+    double abs_error = apprxGauss.absError();
+    std::cout << "Error = " << abs_error << '\n';
+
     adaptiveThreshold(barcode, bin_barcode, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 83, 2);
 
 }
