@@ -22,6 +22,19 @@ namespace cv
 {
 using std::vector;
 
+class ApproxGaussianBlur
+{
+public:
+    ApproxGaussianBlur(Mat in) { m_in = in.clone(); }
+    vector<unsigned> boxesForGauss(double sigma, unsigned count)
+    {
+        double wIdeal = sqrt((12 * sigma * sigma / count) + 1);
+    }
+    double absError();
+private:
+    Mat m_in;
+}
+
 class QRDetect
 {
 public:
@@ -40,11 +53,13 @@ protected:
     bool testBypassRoute(vector<Point2f> hull, int start, int finish);
     inline double getCosVectors(Point2f a, Point2f b, Point2f c);
 
+    vector<size_t> boxesForApprox(double sigma, size_t count);
+    bool gaussianApproxFilter(Mat in, Mat out);
+
     Mat barcode, bin_barcode, straight_barcode;
     vector<Point2f> localization_points, transformation_points;
     double eps_vertical, eps_horizontal, coeff_expansion;
 };
-
 
 void QRDetect::init(const Mat& src, double eps_vertical_, double eps_horizontal_)
 {
