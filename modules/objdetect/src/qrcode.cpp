@@ -9,6 +9,12 @@
 #include "opencv2/objdetect.hpp"
 #include "opencv2/calib3d.hpp"
 
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/videoio.hpp>
+
 #ifdef HAVE_QUIRC
 #include "quirc.h"
 #endif
@@ -17,6 +23,7 @@
 #include <cmath>
 #include <iostream>
 #include <queue>
+#include <string>
 
 namespace cv
 {
@@ -44,29 +51,71 @@ public:
         return result;
     }
 
-    Mat gaussBlur_ocvBoxFilter(double radius)
+    Mat getGaussBlur(double radius, std::string type)
     {
         vector<unsigned> boxes = boxesForGauss(radius, 3);
         Mat temp_in = m_in, out;
         for (size_t i = 0; i < boxes.size(); i++)
         {
-            boxFilter(temp_in, out, -1, Size((boxes[i] - 1) * 0.5, (boxes[i] - 1) * 0.5));
+            std::cout << "Box #" << i << " Size = " << (boxes[i] - 1) * 0.5 << '\n';
+            if (type.compare("ocv_box") == 0) {
+                boxFilter(temp_in, out, -1, Size((boxes[i] - 1) * 0.5, (boxes[i] - 1) * 0.5));
+            }
             temp_in = out;
         }
         return out;
     }
 
-    double absError()
+    
+
+    double absError(std::string type)
     {
-        const double radius = 7;
-        Mat approx = gaussBlur_ocvBoxFilter(radius);
+        const double radius = 5;
+        Mat approx_ocv = getGaussBlur(radius, type);
         Mat original;
         GaussianBlur(m_in, original, Size(radius, radius), actualSigma);
         Mat delta;
-        compare(approx, original, delta, CMP_NE);
+        compare(approx_ocv, original, delta, CMP_NE);
         double cntNE = countNonZero(delta);
         std::cout << "Count non equal pixels = " << cntNE << '\n';
         std::cout << "Actual sigma = " << actualSigma << '\n';
+
+        double sum = 0.0;
+        double max_err = 0.0;
+        for (int i = 0; i < original.cols; i++)
+        {
+            for (int j = 0; j < original.rows; j++)
+            {
+                uint8_t value_original = original.at<uint8_t>(j, i);
+                uint8_t value_approx_ocv = approx_ocv.at<uint8_t>(j, i);
+                double tmp_err = abs(value_original - value_approx_ocv);
+                if (max_err < tmp_err) { max_err = tmp_err; }
+                sum += tmp_err;
+            }
+        }
+        double expected_value = sum / (original.cols * original.rows);
+
+        sum = 0.0;
+        for (int i = 0; i < original.cols; i++)
+        {
+            for (int j = 0; j < original.rows; j++)
+            {
+                uint8_t value_original = original.at<uint8_t>(j, i);
+                uint8_t value_approx_ocv = approx_ocv.at<uint8_t>(j, i);
+                double sigma_squared = abs(abs(value_original - value_approx_ocv) - expected_value);
+                sigma_squared *= sigma_squared;
+                sum += sigma_squared;
+            }
+        }
+        double variance = sum / (original.cols * original.rows);
+        std::cout << "Max abs error = " << max_err << '\n';
+        std::cout << "Mean abs error = " << expected_value << '\n';
+        std::cout << "Variance abs error = " << variance << '\n';
+
+        imshow("Original gauss", original);
+        imshow("approx_ocv gauss", approx_ocv);
+        waitKey(30);
+
         return cntNE / (delta.rows * delta.cols);
     }
 private:
@@ -120,8 +169,10 @@ void QRDetect::init(const Mat& src, double eps_vertical_, double eps_horizontal_
     eps_horizontal = eps_horizontal_;
 
     ApproxGaussianBlur apprxGauss(barcode);
-    double abs_error = apprxGauss.absError();
-    std::cout << "Error = " << abs_error << '\n';
+    std::cout << "---------------------------------------" << '\n';
+    std::cout << "Opencv Box Filter" << '\n';
+    double abs_error = apprxGauss.absError("ocv_box");
+    std::cout << "Part difference pixels = " << abs_error << '\n';
 
     adaptiveThreshold(barcode, bin_barcode, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 83, 2);
 
