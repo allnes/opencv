@@ -131,6 +131,7 @@ void initializeLayerFactory()
     CV_DNN_REGISTER_LAYER_CLASS(Scale,          ScaleLayer);
 
     CV_DNN_REGISTER_LAYER_CLASS(LSTM,           LSTMLayer);
+    CV_DNN_REGISTER_LAYER_CLASS(Axpy,           AXPYLayer);
 }
 
 CV__DNN_EXPERIMENTAL_NS_END
