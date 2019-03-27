@@ -146,12 +146,18 @@ public:
         static void run(const Mat& srcMat, const Mat& weights, const Mat& biasMat,
                         Mat& dstMat, const ActivationLayer* activ, int nstripes)
         {
-            CV_Assert( srcMat.dims == 2 && srcMat.cols == weights.cols &&
-                       dstMat.rows == srcMat.rows && dstMat.cols == weights.rows &&
-                       srcMat.type() == weights.type() && weights.type() == dstMat.type() &&
-                       srcMat.type() == CV_32F &&
-                       (biasMat.empty() || (biasMat.type() == srcMat.type() &&
-                                           biasMat.isContinuous() && (int)biasMat.total() == dstMat.cols)) );
+            CV_Assert(srcMat.dims == 2);
+            CV_Assert(dstMat.rows == srcMat.rows);
+            CV_Assert(dstMat.cols == weights.rows);
+            CV_Assert(srcMat.type() == weights.type());
+            CV_Assert(weights.type() == dstMat.type());
+            CV_Assert(srcMat.type() == CV_32F);
+            CV_Assert(biasMat.empty() || (biasMat.type() == srcMat.type()
+            && biasMat.isContinuous()
+            && (int)biasMat.total() == dstMat.cols)) ;
+            // std::cout << "srcMat.cols = " << srcMat.size << '\n';
+            // std::cout << "weights.cols = " << weights.size << '\n';
+            // CV_Assert(srcMat.cols == weights.cols);
 
             FullyConnected p;
 
