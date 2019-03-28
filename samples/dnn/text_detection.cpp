@@ -6,13 +6,14 @@ using namespace cv;
 using namespace cv::dnn;
 
 const char* keys =
-    "{ help  h     | | Print help message. }"
-    "{ input i     | | Path to input image or video file. Skip this argument to capture frames from a camera.}"
-    "{ model m     | | Path to a binary .pb file contains trained network.}"
-    "{ width       | 320 | Preprocess input image by resizing to a specific width. It should be multiple by 32. }"
-    "{ height      | 320 | Preprocess input image by resizing to a specific height. It should be multiple by 32. }"
-    "{ thr         | 0.5 | Confidence threshold. }"
-    "{ nms         | 0.4 | Non-maximum suppression threshold. }";
+    "{ help   h     |     | Print help message. }"
+    "{ input  i     |     | Path to input image or video file. Skip this argument to capture frames from a camera.}"
+    "{ model  m     |     | Path to a binary file contains trained network.}"
+    "{ config c     |     | Path to a config file contains model network.}"
+    "{ width        | 320 | Preprocess input image by resizing to a specific width. It should be multiple by 32. }"
+    "{ height       | 320 | Preprocess input image by resizing to a specific height. It should be multiple by 32. }"
+    "{ thr          | 0.5 | Confidence threshold. }"
+    "{ nms          | 0.4 | Non-maximum suppression threshold. }";
 
 void decode(const Mat& scores, const Mat& geometry, float scoreThresh,
             std::vector<RotatedRect>& detections, std::vector<float>& confidences);
@@ -34,6 +35,7 @@ int main(int argc, char** argv)
     int inpWidth = parser.get<int>("width");
     int inpHeight = parser.get<int>("height");
     String model = parser.get<String>("model");
+    String config = parser.get<String>("config");
 
     if (!parser.check())
     {
@@ -44,7 +46,7 @@ int main(int argc, char** argv)
     CV_Assert(!model.empty());
 
     // Load network.
-    Net net = readNet(model);
+    Net net = readNet(model, config);
 
     // Open a video file or an image file or a camera stream.
     VideoCapture cap;
