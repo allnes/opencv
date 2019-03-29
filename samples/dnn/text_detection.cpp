@@ -60,8 +60,10 @@ int main(int argc, char** argv)
 
     std::vector<Mat> outs;
     std::vector<String> outNames(2);
-    outNames[0] = "feature_fusion/Conv_7/Sigmoid";
-    outNames[1] = "feature_fusion/concat_3";
+    // outNames[0] = "feature_fusion/Conv_7/Sigmoid";
+    // outNames[1] = "feature_fusion/concat_3";
+    outNames[0] = "pixel_cls/add_2";
+    outNames[1] = "pixel_link/add_2";
 
     Mat frame, blob;
     while (waitKey(1) < 0)
@@ -117,15 +119,16 @@ int main(int argc, char** argv)
     }
     return 0;
 }
-
+#include <iostream>
 void decode(const Mat& scores, const Mat& geometry, float scoreThresh,
             std::vector<RotatedRect>& detections, std::vector<float>& confidences)
 {
     detections.clear();
+    std::cout << scores.size[1] << '\n';
+    std::cout << geometry.size[1] << '\n';
     CV_Assert(scores.dims == 4); CV_Assert(geometry.dims == 4); CV_Assert(scores.size[0] == 1);
     CV_Assert(geometry.size[0] == 1); CV_Assert(scores.size[1] == 1); CV_Assert(geometry.size[1] == 5);
     CV_Assert(scores.size[2] == geometry.size[2]); CV_Assert(scores.size[3] == geometry.size[3]);
-
     const int height = scores.size[2];
     const int width = scores.size[3];
     for (int y = 0; y < height; ++y)
