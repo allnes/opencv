@@ -399,12 +399,12 @@ bool GStreamerCapture::determineFrameDims(Size &sz, gint& channels, bool& isOutp
     GstStructure* structure = gst_caps_get_structure(frame_caps, 0);  // no lifetime transfer
 
     // bail out if width or height are 0
-    if (!gst_structure_get_int(structure, "width", &width)
-        || !gst_structure_get_int(structure, "height", &height))
-    {
-        CV_WARN("Can't query frame size from GStreeamer buffer");
-        return false;
-    }
+    // if (!gst_structure_get_int(structure, "width", &width)
+    //     || !gst_structure_get_int(structure, "height", &height))
+    // {
+    //     CV_WARN("Can't query frame size from GStreeamer buffer");
+    //     return false;
+    // }
 
     sz = Size(width, height);
 
@@ -468,7 +468,10 @@ bool GStreamerCapture::determineFrameDims(Size &sz, gint& channels, bool& isOutp
     }
     else
     {
-        CV_Error_(Error::StsNotImplemented, ("Unsupported GStreamer layer type: %s", name.c_str()));
+        // CV_Error_(Error::StsNotImplemented, ("Unsupported GStreamer layer type: %s", name.c_str()));
+        channels = 2;
+        isOutputByteBuffer = true;
+
     }
     return true;
 }
@@ -843,17 +846,17 @@ bool GStreamerCapture::open(const String &filename_)
         }
     }
 
-    if (!manualpipeline || strstr(filename, " max-buffers=") == NULL)
-    {
-        //TODO: is 1 single buffer really high enough?
-        gst_app_sink_set_max_buffers(GST_APP_SINK(sink.get()), 1);
-    }
+    // if (!manualpipeline || strstr(filename, " max-buffers=") == NULL)
+    // {
+    //     //TODO: is 1 single buffer really high enough?
+    //     gst_app_sink_set_max_buffers(GST_APP_SINK(sink.get()), 1);
+    // }
 
     //do not emit signals: all calls will be synchronous and blocking
     gst_app_sink_set_emit_signals (GST_APP_SINK(sink.get()), FALSE);
 
 
-    caps.attach(gst_caps_from_string("video/x-raw, format=(string){BGR, GRAY8}; video/x-bayer,format=(string){rggb,bggr,grbg,gbrg}; image/jpeg"));
+    // caps.attach(gst_caps_from_string("video/x-raw, format=(string){BGR, GRAY8}; video/x-bayer,format=(string){rggb,bggr,grbg,gbrg}; image/jpeg"));
 
     if (manualpipeline)
     {
@@ -861,10 +864,10 @@ bool GStreamerCapture::open(const String &filename_)
         GSafePtr<GstPad> sink_pad;
         sink_pad.attach(gst_element_get_static_pad(sink, "sink"));
         peer_caps.attach(gst_pad_peer_query_caps(sink_pad, NULL));
-        if (!gst_caps_can_intersect(caps, peer_caps)) {
-            caps.attach(gst_caps_from_string("video/x-raw, format=(string){UYVY,YUY2,YVYU,NV12,NV21,YV12,I420}"));
-            CV_Assert(caps);
-        }
+        // if (!gst_caps_can_intersect(caps, peer_caps)) {
+        //     caps.attach(gst_caps_from_string("video/x-raw, format=(string){UYVY,YUY2,YVYU,NV12,NV21,YV12,I420}"));
+        //     CV_Assert(caps);
+        // }
     }
 
     gst_app_sink_set_caps(GST_APP_SINK(sink.get()), caps);
@@ -908,17 +911,17 @@ bool GStreamerCapture::open(const String &filename_)
         buffer_caps.attach(gst_pad_get_current_caps(pad));
 
         const GstStructure *structure = gst_caps_get_structure(buffer_caps, 0);  // no lifetime transfer
-        if (!gst_structure_get_int (structure, "width", &width) ||
-            !gst_structure_get_int (structure, "height", &height))
-        {
-            CV_WARN("cannot query video width/height");
-        }
+        // if (!gst_structure_get_int (structure, "width", &width) ||
+        //     !gst_structure_get_int (structure, "height", &height))
+        // {
+        //     CV_WARN("cannot query video width/height");
+        // }
 
         gint num = 0, denom=1;
-        if (!gst_structure_get_fraction(structure, "framerate", &num, &denom))
-        {
-            CV_WARN("cannot query video fps");
-        }
+        // if (!gst_structure_get_fraction(structure, "framerate", &num, &denom))
+        // {
+        //     CV_WARN("cannot query video fps");
+        // }
 
         fps = (double)num/(double)denom;
 
@@ -930,14 +933,14 @@ bool GStreamerCapture::open(const String &filename_)
             format_ = GST_FORMAT_DEFAULT;
 
             status_ = gst_element_query_position(sink, CV_GST_FORMAT(format_), &value_);
-            if (!status_ || value_ != 0 || duration < 0)
-            {
-                CV_WARN("Cannot query video position: status=" << status_ << ", value=" << value_ << ", duration=" << duration);
-                isPosFramesSupported = false;
-                isPosFramesEmulated = true;
-                emulatedFrameNumber = 0;
-            }
-            else
+            // if (!status_ || value_ != 0 || duration < 0)
+            // {
+            //     CV_WARN("Cannot query video position: status=" << status_ << ", value=" << value_ << ", duration=" << duration);
+            //     isPosFramesSupported = false;
+            //     isPosFramesEmulated = true;
+            //     emulatedFrameNumber = 0;
+            // }
+            // else
                 isPosFramesSupported = true;
         }
 
