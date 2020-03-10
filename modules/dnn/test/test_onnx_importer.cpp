@@ -32,29 +32,33 @@ public:
 
     void testONNXModels(const String& basename, const Extension ext = npy,
                         const double l1 = 0, const float lInf = 0, const bool useSoftmax = false,
-                        bool checkNoFallbacks = true)
+                        bool checkNoFallbacks = true, int numInps = 1)
     {
         String onnxmodel = _tf("models/" + basename + ".onnx", required);
-        Mat inp, ref;
+        std::vector<Mat> inps(numInps);
+        Mat ref;
         if (ext == npy) {
-            inp = blobFromNPY(_tf("data/input_" + basename + ".npy"));
+            for (int i = 0; i < numInps; ++i)
+                inps[i] = blobFromNPY(_tf("data/input_" + basename + (numInps > 1 ? format("_%d", i) : "") + ".npy"));
             ref = blobFromNPY(_tf("data/output_" + basename + ".npy"));
         }
         else if (ext == pb) {
-            inp = readTensorFromONNX(_tf("data/input_" + basename + ".pb"));
+            for (int i = 0; i < numInps; ++i)
+                inps[i] = readTensorFromONNX(_tf("data/input_" + basename + (numInps > 1 ? format("_%d", i) : "") + ".pb"));
             ref = readTensorFromONNX(_tf("data/output_" + basename + ".pb"));
         }
         else
             CV_Error(Error::StsUnsupportedFormat, "Unsupported extension");
 
-        checkBackend(&inp, &ref);
+        checkBackend(&inps[0], &ref);
         Net net = readNetFromONNX(onnxmodel);
         ASSERT_FALSE(net.empty());
 
         net.setPreferableBackend(backend);
         net.setPreferableTarget(target);
 
-        net.setInput(inp);
+        for (int i = 0; i < numInps; ++i)
+            net.setInput(inps[i], numInps > 1 ? format("%d", i) : "");
         Mat out = net.forward("");
 
         if (useSoftmax)
@@ -340,27 +344,26 @@ TEST_P(Test_ONNX_layers, Resize)
     testONNXModels("resize_bilinear");
 }
 
+TEST_P(Test_ONNX_layers, ResizeUnfused)
+{
+    if (backend == DNN_BACKEND_INFERENCE_ENGINE_NN_BUILDER_2019)
+        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_NN_BUILDER);
+    testONNXModels("upsample_unfused_torch1.2");
+    testONNXModels("upsample_unfused_opset9_torch1.4");
+    testONNXModels("resize_nearest_unfused_opset11_torch1.4");
+    testONNXModels("resize_nearest_unfused_opset11_torch1.3");
+}
+
 TEST_P(Test_ONNX_layers, MultyInputs)
 {
-    const String model =  _tf("models/multy_inputs.onnx");
+    testONNXModels("multy_inputs", npy, 0, 0, false, true, 2);
+}
 
-    Net net = readNetFromONNX(model);
-    ASSERT_FALSE(net.empty());
-
-    net.setPreferableBackend(backend);
-    net.setPreferableTarget(target);
-
-    Mat inp1 = blobFromNPY(_tf("data/input_multy_inputs_0.npy"));
-    Mat inp2 = blobFromNPY(_tf("data/input_multy_inputs_1.npy"));
-    Mat ref  = blobFromNPY(_tf("data/output_multy_inputs.npy"));
-    checkBackend(&inp1, &ref);
-
-    net.setInput(inp1, "0");
-    net.setInput(inp2, "1");
-    Mat out = net.forward();
-
-    normAssert(ref, out, "", default_l1,  default_lInf);
-    expectNoFallbacksFromIE(net);
+TEST_P(Test_ONNX_layers, Broadcast)
+{
+    if (backend == DNN_BACKEND_INFERENCE_ENGINE_NN_BUILDER_2019)
+        applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_NN_BUILDER);
+    testONNXModels("channel_broadcast", npy, 0, 0, false, true, 2);
 }
 
 TEST_P(Test_ONNX_layers, Div)
@@ -397,6 +400,8 @@ TEST_P(Test_ONNX_layers, DynamicReshape)
         if (target == DNN_TARGET_OPENCL)      applyTestTag(CV_TEST_TAG_DNN_SKIP_IE_OPENCL, CV_TEST_TAG_DNN_SKIP_IE_NN_BUILDER);
     }
     testONNXModels("dynamic_reshape");
+    testONNXModels("dynamic_reshape_opset_11");
+    testONNXModels("flatten_by_prod");
 }
 
 TEST_P(Test_ONNX_layers, Reshape)
@@ -461,7 +466,12 @@ public:
 
 TEST_P(Test_ONNX_nets, Alexnet)
 {
+#if defined(OPENCV_32BIT_CONFIGURATION) && defined(HAVE_OPENCL)
+    applyTestTag(CV_TEST_TAG_MEMORY_2GB);
+#else
     applyTestTag(target == DNN_TARGET_CPU ? CV_TEST_TAG_MEMORY_512MB : CV_TEST_TAG_MEMORY_1GB);
+#endif
+
     const String model =  _tf("models/alexnet.onnx", false);
 
     Net net = readNetFromONNX(model);
@@ -520,7 +530,12 @@ TEST_P(Test_ONNX_nets, Googlenet)
 
 TEST_P(Test_ONNX_nets, CaffeNet)
 {
+#if defined(OPENCV_32BIT_CONFIGURATION) && defined(HAVE_OPENCL)
+    applyTestTag(CV_TEST_TAG_MEMORY_2GB);
+#else
     applyTestTag(target == DNN_TARGET_CPU ? CV_TEST_TAG_MEMORY_512MB : CV_TEST_TAG_MEMORY_1GB);
+#endif
+
 #if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_EQ(2019030000)
     if (backend == DNN_BACKEND_INFERENCE_ENGINE_NN_BUILDER_2019 && target == DNN_TARGET_MYRIAD
         && getInferenceEngineVPUType() == CV_DNN_INFERENCE_ENGINE_VPU_TYPE_MYRIAD_X)
@@ -531,7 +546,12 @@ TEST_P(Test_ONNX_nets, CaffeNet)
 
 TEST_P(Test_ONNX_nets, RCNN_ILSVRC13)
 {
+#if defined(OPENCV_32BIT_CONFIGURATION) && defined(HAVE_OPENCL)
+    applyTestTag(CV_TEST_TAG_MEMORY_2GB);
+#else
     applyTestTag(target == DNN_TARGET_CPU ? CV_TEST_TAG_MEMORY_512MB : CV_TEST_TAG_MEMORY_1GB);
+#endif
+
 #if defined(INF_ENGINE_RELEASE) && INF_ENGINE_VER_MAJOR_EQ(2019030000)
     if (backend == DNN_BACKEND_INFERENCE_ENGINE_NN_BUILDER_2019 && target == DNN_TARGET_MYRIAD
         && getInferenceEngineVPUType() == CV_DNN_INFERENCE_ENGINE_VPU_TYPE_MYRIAD_X)
@@ -643,7 +663,11 @@ TEST_P(Test_ONNX_nets, MobileNet_v2)
 TEST_P(Test_ONNX_nets, LResNet100E_IR)
 {
     applyTestTag(
+#if defined(OPENCV_32BIT_CONFIGURATION) && defined(HAVE_OPENCL)
+        CV_TEST_TAG_MEMORY_2GB,
+#else
         (target == DNN_TARGET_CPU ? CV_TEST_TAG_MEMORY_512MB : CV_TEST_TAG_MEMORY_1GB),
+#endif
         CV_TEST_TAG_DEBUG_LONG
     );
     if (backend == DNN_BACKEND_INFERENCE_ENGINE_NN_BUILDER_2019)
