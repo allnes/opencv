@@ -711,11 +711,11 @@ bool GStreamerCapture::open(const String &filename_)
         {
             GSafePtr<GError> err;
             uridecodebin.attach(gst_parse_launch(filename, err.getRef()));
-            if (err)
-            {
-                CV_WARN("Error opening bin: " << err->message);
-                return false;
-            }
+            // if (err)
+            // {
+            //     CV_WARN("Error opening bin: " << err->message);
+            //     return false;
+            // }
             manualpipeline = true;
         }
     }
