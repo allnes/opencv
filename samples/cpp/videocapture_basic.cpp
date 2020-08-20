@@ -23,9 +23,9 @@ int main(int, char**)
     // cap.open(0);
     // OR advance usage: select any API backend
     int deviceID = 0;             // 0 = open default camera
-    int apiID = cv::CAP_ANY;      // 0 = autodetect default API
+    int apiID = cv::CAP_MSMF;      // 0 = autodetect default API
     // open selected camera using selected API
-    cap.open(deviceID, apiID);
+    cap.open("Landscape757.mp4", apiID);
     // check if we succeeded
     if (!cap.isOpened()) {
         cerr << "ERROR! Unable to open camera\n";
@@ -44,10 +44,11 @@ int main(int, char**)
             cerr << "ERROR! blank frame grabbed\n";
             break;
         }
+        std::cout << frame << std::endl;
         // show live and wait for a key with timeout long enough to show images
-        imshow("Live", frame);
-        if (waitKey(5) >= 0)
-            break;
+        //imshow("Live", frame);
+        //if (waitKey(5) >= 0)
+        //    break;
     }
     // the camera will be deinitialized automatically in VideoCapture destructor
     return 0;

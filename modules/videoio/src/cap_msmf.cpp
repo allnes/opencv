@@ -492,22 +492,27 @@ public:
             }
         }
     }
-    std::pair<MediaID, MediaType> findBestVideoFormat(const MediaType& newType)
+    std::pair<MediaID, MediaType> findBestVideoFormat(const MediaType& newType, bool switch_mediatype)
     {
         std::pair<MediaID, MediaType> best;
         std::map<MediaID, MediaType>::const_iterator i = formats.begin();
         for (; i != formats.end(); ++i)
         {
-            if (i->second.majorType != MFMediaType_Video)
-                continue;
-            if (newType.isEmpty()) // file input - choose first returned media type
+            if (i->second.majorType == MFMediaType_Video && !(switch_mediatype))
             {
-                best = *i;
-                break;
+                if (best.second.isEmpty() || i->second.isBetterThan(best.second, newType))
+                {
+                    std::cout << "Video" << std::endl;
+                    best = *i;
+                }
             }
-            if (best.second.isEmpty() || i->second.isBetterThan(best.second, newType))
+            else
             {
-                best = *i;
+                if (i->second.majorType == MFMediaType_Audio && switch_mediatype)
+                {
+                    std::cout << "Audio" << std::endl;
+                    best = *i;
+                }
             }
         }
         return best;
@@ -609,6 +614,7 @@ protected:
     DWORD dwStreamIndex;
     MediaType nativeFormat;
     MediaType captureFormat;
+    bool switch_mediatype;
     int outputFormat;
     bool convertFormat;
     MFTIME duration;
@@ -628,6 +634,7 @@ CvCapture_MSMF::CvCapture_MSMF():
     D3DDev(NULL),
     D3DMgr(NULL),
 #endif
+    switch_mediatype(true),
     videoFileSource(NULL),
     videoSample(NULL),
     outputFormat(CV_CAP_MODE_BGR),
@@ -777,8 +784,8 @@ bool CvCapture_MSMF::configureOutput(MediaType newType, cv::uint32_t outFormat)
 {
     FormatStorage formats;
     formats.read(videoFileSource.Get());
-    std::pair<FormatStorage::MediaID, MediaType> bestMatch = formats.findBestVideoFormat(newType);
-    if (bestMatch.second.isEmpty())
+    std::pair<FormatStorage::MediaID, MediaType> bestMatch = formats.findBestVideoFormat(newType, switch_mediatype);
+    if (bestMatch.second.isEmpty() && !(switch_mediatype))
     {
         CV_LOG_DEBUG(NULL, "Can not find video stream with requested parameters");
         return false;
@@ -786,7 +793,7 @@ bool CvCapture_MSMF::configureOutput(MediaType newType, cv::uint32_t outFormat)
     dwStreamIndex = bestMatch.first.stream;
     nativeFormat = bestMatch.second;
     MediaType newFormat = nativeFormat;
-    if (convertFormat)
+    if (convertFormat && !(switch_mediatype))
     {
         switch (outFormat)
         {
@@ -813,6 +820,11 @@ bool CvCapture_MSMF::configureOutput(MediaType newType, cv::uint32_t outFormat)
         newFormat.isFixedSize = true;
         if (nativeFormat.subType == MFVideoFormat_MP43) //Unable to estimate FPS for MP43
             newFormat.frameRateNum = 0;
+    }
+    if(switch_mediatype) 
+    {   
+        std::cout << "PCM" << std::endl;
+        newFormat.subType = MFAudioFormat_PCM;
     }
     // we select native format first and then our requested format (related issue #12822)
     if (!newType.isEmpty()) // camera input
@@ -858,7 +870,6 @@ bool CvCapture_MSMF::open(const cv::String& _filename)
     close();
     if (_filename.empty())
         return false;
-
     // Set source reader parameters
     _ComPtr<IMFAttributes> attr = getDefaultSourceConfig();
     cv::AutoBuffer<wchar_t> unicodeFileName(_filename.length() + 1);
@@ -868,20 +879,24 @@ bool CvCapture_MSMF::open(const cv::String& _filename)
         isOpen = true;
         sampleTime = 0;
         if (configureOutput(MediaType(), outputFormat))
-        {
-            frameStep = captureFormat.getFrameStep();
-            filename = _filename;
-            PROPVARIANT var;
-            HRESULT hr;
-            if (SUCCEEDED(hr = videoFileSource->GetPresentationAttribute((DWORD)MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION, &var)) &&
-                var.vt == VT_UI8)
+        {   
+            if(!switch_mediatype)
             {
-                duration = var.uhVal.QuadPart;
-                PropVariantClear(&var);
+                frameStep = captureFormat.getFrameStep();
+                filename = _filename;
+                PROPVARIANT var;
+                HRESULT hr;
+                if (SUCCEEDED(hr = videoFileSource->GetPresentationAttribute((DWORD)MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION, &var)) &&
+                    var.vt == VT_UI8)
+                {
+                    duration = var.uhVal.QuadPart;
+                    PropVariantClear(&var);
+                }
+                else
+                    duration = 0;
             }
-            else
-                duration = 0;
         }
+            
     }
 
     return isOpen;
@@ -998,7 +1013,7 @@ bool CvCapture_MSMF::retrieveFrame(int, cv::OutputArray frame)
     do
     {
         if (!videoSample)
-            break;
+           break;
 
         _ComPtr<IMFMediaBuffer> buf = NULL;
 
@@ -1023,7 +1038,7 @@ bool CvCapture_MSMF::retrieveFrame(int, cv::OutputArray frame)
         // "For 2-D buffers, the Lock2D method is more efficient than the Lock method"
         // see IMFMediaBuffer::Lock method documentation: https://msdn.microsoft.com/en-us/library/windows/desktop/bb970366(v=vs.85).aspx
         _ComPtr<IMF2DBuffer> buffer2d;
-        if (convertFormat)
+        if (convertFormat && !(switch_mediatype))
         {
             if (SUCCEEDED(buf.As<IMF2DBuffer>(buffer2d)))
             {
@@ -1045,41 +1060,47 @@ bool CvCapture_MSMF::retrieveFrame(int, cv::OutputArray frame)
         }
         if (!ptr)
             break;
-        if (convertFormat)
+        if(!switch_mediatype)
         {
-            if (lock2d || (unsigned int)cursize == captureFormat.sampleSize)
+            if (convertFormat)
             {
-                switch (outputFormat)
+                if (lock2d || (unsigned int)cursize == captureFormat.sampleSize)
                 {
-                case CV_CAP_MODE_YUYV:
-                    cv::Mat(captureFormat.height, captureFormat.width, CV_8UC2, ptr, pitch).copyTo(frame);
-                    break;
-                case CV_CAP_MODE_BGR:
-                    if (captureMode == MODE_HW)
-                        cv::cvtColor(cv::Mat(captureFormat.height, captureFormat.width, CV_8UC4, ptr, pitch), frame, cv::COLOR_BGRA2BGR);
-                    else
-                        cv::Mat(captureFormat.height, captureFormat.width, CV_8UC3, ptr, pitch).copyTo(frame);
-                    break;
-                case CV_CAP_MODE_RGB:
-                    if (captureMode == MODE_HW)
-                        cv::cvtColor(cv::Mat(captureFormat.height, captureFormat.width, CV_8UC4, ptr, pitch), frame, cv::COLOR_BGRA2BGR);
-                    else
-                        cv::cvtColor(cv::Mat(captureFormat.height, captureFormat.width, CV_8UC3, ptr, pitch), frame, cv::COLOR_BGR2RGB);
-                    break;
-                case CV_CAP_MODE_GRAY:
-                    cv::Mat(captureFormat.height, captureFormat.width, CV_8UC1, ptr, pitch).copyTo(frame);
-                    break;
-                default:
-                    frame.release();
-                    break;
+                    switch (outputFormat)
+                    {
+                    case CV_CAP_MODE_YUYV:
+                        cv::Mat(captureFormat.height, captureFormat.width, CV_8UC2, ptr, pitch).copyTo(frame);
+                        break;
+                    case CV_CAP_MODE_BGR:
+                        if (captureMode == MODE_HW)
+                            cv::cvtColor(cv::Mat(captureFormat.height, captureFormat.width, CV_8UC4, ptr, pitch), frame, cv::COLOR_BGRA2BGR);
+                        else
+                            cv::Mat(captureFormat.height, captureFormat.width, CV_8UC3, ptr, pitch).copyTo(frame);
+                        break;
+                    case CV_CAP_MODE_RGB:
+                        if (captureMode == MODE_HW)
+                            cv::cvtColor(cv::Mat(captureFormat.height, captureFormat.width, CV_8UC4, ptr, pitch), frame, cv::COLOR_BGRA2BGR);
+                        else
+                            cv::cvtColor(cv::Mat(captureFormat.height, captureFormat.width, CV_8UC3, ptr, pitch), frame, cv::COLOR_BGR2RGB);
+                        break;
+                    case CV_CAP_MODE_GRAY:
+                        cv::Mat(captureFormat.height, captureFormat.width, CV_8UC1, ptr, pitch).copyTo(frame);
+                        break;
+                    default:
+                        frame.release();
+                        break;
+                    }
                 }
+                else
+                    frame.release();
             }
             else
-                frame.release();
+                cv::Mat(1, cursize, CV_8UC1, ptr, pitch).copyTo(frame);
         }
         else
-        {
-            cv::Mat(1, cursize, CV_8UC1, ptr, pitch).copyTo(frame);
+        {   
+            std::cout << "MAT" << std::endl;
+            cv::Mat(cursize/4, 2, CV_16S, ptr).copyTo(frame);
         }
         CV_TRACE_REGION_NEXT("unlock");
         if (lock2d)
