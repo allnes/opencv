@@ -82,6 +82,7 @@ TEST(videoio_ffmpeg, image)
         throw SkipTestException("FFmpeg backend was not found");
 
     const string filename = findDataFile("readwrite/ordinary.bmp");
+    cout << filename << endl;
     Mat image = imread(filename, IMREAD_COLOR);
     ASSERT_FALSE(image.empty());
     VideoCapture cap(filename, CAP_FFMPEG);

@@ -560,6 +560,8 @@ void TS::init( const string& modulename )
     if( datapath_dir )
     {
         data_path = path_join(path_join(datapath_dir, modulename), "");
+        cout << data_path << endl;
+        cout << modulename << endl;
     }
 
     cv::redirectError((cv::ErrorCallback)tsErrorCallback, this);

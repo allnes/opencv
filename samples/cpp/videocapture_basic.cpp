@@ -25,26 +25,29 @@ int main(int, char**)
     int deviceID = 0;             // 0 = open default camera
     int apiID = cv::CAP_MSMF;      // 0 = autodetect default API
     // open selected camera using selected API
-    cap.open("Landscape757.mp4", apiID);
+    cap.open("test_8bit_1channels_44100hz.wav", apiID);
+    cap.set(CAP_SWITCH_MEDIA_TYPE,15);
     // check if we succeeded
     if (!cap.isOpened()) {
-        cerr << "ERROR! Unable to open camera\n";
+        cerr << "ERROR! Unable to open file\n";
         return -1;
     }
 
     //--- GRAB AND WRITE LOOP
     cout << "Start grabbing" << endl
         << "Press any key to terminate" << endl;
+
+    cout << "asd" << endl;
     for (;;)
     {
         // wait for a new frame from camera and store it into 'frame'
         cap.read(frame);
         // check if we succeeded
         if (frame.empty()) {
-            cerr << "ERROR! blank frame grabbed\n";
+            //cerr << "ERROR! blank frame grabbed\n";
             break;
         }
-        std::cout << frame << std::endl;
+        //std::cout << frame << std::endl;
         // show live and wait for a key with timeout long enough to show images
         //imshow("Live", frame);
         //if (waitKey(5) >= 0)

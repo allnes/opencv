@@ -103,10 +103,14 @@ public:
     virtual ~ComPtr()
     {
     }
-
     T** operator&()
     {
         CV_Assert(p == NULL);
+        return p.operator&();
+    }
+    T** operator&(int)
+    {
+        CV_Assert(p != NULL);
         return p.operator&();
     }
     T* operator->() const
@@ -118,12 +122,10 @@ public:
     {
         return p.operator!=(NULL);
     }
-
     T* Get() const
-    {
+    {   
         return p;
     }
-
     void Release()
     {
         if (p)
@@ -150,7 +152,7 @@ template <typename T> inline T absDiff(T a, T b) { return a >= b ? a - b : b - a
 
 // Structure for collecting info about types of video which are supported by current video device
 struct MediaType
-{
+{   
     UINT32 width;
     UINT32 height;
     INT32 stride; // stride is negative if image is bottom-up
@@ -163,7 +165,11 @@ struct MediaType
     UINT32 interlaceMode;
     GUID majorType; // video or audio
     GUID subType; // fourCC
+    _ComPtr<IMFMediaType> Type;
+    WAVEFORMATEX* pWav;
     MediaType(IMFMediaType *pType = 0) :
+        Type(pType),
+        pWav(NULL),
         width(0), height(0),
         stride(0),
         isFixedSize(true),
@@ -171,7 +177,7 @@ struct MediaType
         aspectRatioNum(1), aspectRatioDenom(1),
         sampleSize(0),
         interlaceMode(0),
-        majorType(MFMediaType_Video),
+        majorType({ 0 }),//MFMediaType_Video
         subType({ 0 })
     {
         if (pType)
@@ -634,7 +640,7 @@ CvCapture_MSMF::CvCapture_MSMF():
     D3DDev(NULL),
     D3DMgr(NULL),
 #endif
-    switch_mediatype(true),
+    switch_mediatype(false),
     videoFileSource(NULL),
     videoSample(NULL),
     outputFormat(CV_CAP_MODE_BGR),
@@ -823,8 +829,77 @@ bool CvCapture_MSMF::configureOutput(MediaType newType, cv::uint32_t outFormat)
     }
     if(switch_mediatype) 
     {   
-        std::cout << "PCM" << std::endl;
         newFormat.subType = MFAudioFormat_PCM;
+
+        UINT32 cbFormat = 0; 
+        IMFMediaType *pPartialType = NULL;
+        HRESULT hr = MFCreateWaveFormatExFromMFMediaType(nativeFormat.Type.Get(), &(nativeFormat.pWav), &cbFormat);
+        
+        UINT32 nAvgBytesPerSec = 0;
+        UINT32 nBytesPerSec = 0;
+        hr = nativeFormat.Type.Get()->GetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &nAvgBytesPerSec);
+        hr = nativeFormat.Type.Get()->GetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, &nBytesPerSec);
+
+        if(!nativeFormat.pWav->wBitsPerSample && SUCCEEDED(hr))
+        {   
+            hr = MFCreateMediaType(&pPartialType);
+            if (SUCCEEDED(hr))
+            {
+                hr = pPartialType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+            }
+            if (SUCCEEDED(hr))
+            {
+                hr = pPartialType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
+            }            
+            if (SUCCEEDED(hr))
+            {
+                hr = pPartialType->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, nativeFormat.pWav->nChannels);
+            }
+            if (SUCCEEDED(hr))
+            {
+               hr = pPartialType->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, nativeFormat.pWav->nSamplesPerSec);
+            }           
+            if (SUCCEEDED(hr))
+            {
+               hr = pPartialType->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, nativeFormat.pWav->nBlockAlign);
+            }           
+            if (SUCCEEDED(hr))
+            {
+               hr = pPartialType->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, nativeFormat.pWav->nAvgBytesPerSec);
+            }            
+            if (SUCCEEDED(hr))
+            {
+                hr = pPartialType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+            }      
+            if (SUCCEEDED(hr))
+            {
+                hr = pPartialType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
+            }      
+            if (SUCCEEDED(hr))
+            {
+                hr = videoFileSource.Get()->SetCurrentMediaType(bestMatch.first.stream, NULL, pPartialType);
+            }
+            if (SUCCEEDED(hr))
+            {
+                hr = videoFileSource.Get()->SetStreamSelection(bestMatch.first.stream, TRUE);
+            }
+            if (SUCCEEDED(hr))
+            {   
+                hr = videoFileSource.Get()->GetCurrentMediaType(bestMatch.first.stream, nativeFormat.Type.operator&(1));
+            }
+            if (SUCCEEDED(hr))
+            {
+                hr = MFCreateWaveFormatExFromMFMediaType(nativeFormat.Type.Get(), &(nativeFormat.pWav), &cbFormat);
+            }
+        }
+        /*std::cout << cbFormat << std::endl;
+        std::cout << "wFormatTag " << nativeFormat.pWav->wFormatTag << std::endl;
+        std::cout << "wBitsPerSample " << nativeFormat.pWav->wBitsPerSample << std::endl;
+        std::cout << "nChannels " << nativeFormat.pWav->nChannels << std::endl;
+        std::cout << "nBlockAlign " << nativeFormat.pWav->nBlockAlign<< std::endl;
+        std::cout << "nSamplesPerSec " << nativeFormat.pWav->nSamplesPerSec << std::endl; 
+        std::cout << "nAvgBytesPerSec " << nativeFormat.pWav->nAvgBytesPerSec<< std::endl;
+        std::cout << ((nativeFormat.pWav->nAvgBytesPerSec*8)/nativeFormat.pWav->nChannels)/nativeFormat.pWav->nSamplesPerSec << std::endl;*/ 
     }
     // we select native format first and then our requested format (related issue #12822)
     if (!newType.isEmpty()) // camera input
@@ -1099,8 +1174,29 @@ bool CvCapture_MSMF::retrieveFrame(int, cv::OutputArray frame)
         }
         else
         {   
-            std::cout << "MAT" << std::endl;
-            cv::Mat(cursize/4, 2, CV_16S, ptr).copyTo(frame);
+            switch(nativeFormat.pWav->wBitsPerSample)
+            {
+            case 0:
+                cv::Mat(cursize/(nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_8S, ptr).copyTo(frame);
+                break;
+            case 8:
+                cv::Mat(cursize/(nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_8SC1, ptr).copyTo(frame);
+                break;
+            case 16:
+                cv::Mat(cursize/(2*nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_16S, ptr).copyTo(frame);
+                break;
+            case 24:
+                std::cout << "Sorry, 24 bit per sample don't yet support. " << std::endl;
+                //cv::Mat(cursize/(3*nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_24S, ptr).copyTo(frame); CV_8UC3
+                break;
+            case 32:
+                cv::Mat(cursize/(4*nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_32S, ptr).copyTo(frame);
+                break;
+            default:
+                frame.release();
+                break;
+            }
+            //cv::Mat(cursize/(2*nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_16S, ptr).copyTo(frame);
         }
         CV_TRACE_REGION_NEXT("unlock");
         if (lock2d)
@@ -1429,6 +1525,9 @@ bool CvCapture_MSMF::setProperty( int property_id, double value )
         case CV_CAP_PROP_ISO_SPEED:
         case CV_CAP_PROP_SETTINGS:
         case CV_CAP_PROP_BUFFERSIZE:
+        case CV_CAP_SWITCH_MEDIA_TYPE:
+            (switch_mediatype == false) ? switch_mediatype = true : switch_mediatype = false;
+            return configureOutput(MediaType(), outputFormat);
         default:
             break;
         }
