@@ -180,7 +180,7 @@ enum VideoCaptureProperties {
        CAP_PROP_BITRATE       =47, //!< (read-only) Video bitrate in kbits/s
        CAP_PROP_ORIENTATION_META=48, //!< (read-only) Frame rotation defined by stream meta (applicable for FFmpeg back-end only)
        CAP_PROP_ORIENTATION_AUTO=49, //!< if true - rotates output frames of CvCapture considering video file's metadata  (applicable for FFmpeg back-end only) (https://github.com/opencv/opencv/issues/15499)
-       CAP_SWITCH_MEDIA_TYPE = 999999,
+       CAP_SWITCH_AUDIO_STREAM = 999999,
 #ifndef CV_DOXYGEN
        CV__CAP_PROP_LATEST
 #endif
