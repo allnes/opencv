@@ -315,6 +315,9 @@ enum
     CV_CAP_PROP_XI_SENSOR_FEATURE_SELECTOR                      = 585, // Selects the current feature which is accessible by XI_PRM_SENSOR_FEATURE_VALUE.
     CV_CAP_PROP_XI_SENSOR_FEATURE_VALUE                         = 586, // Allows access to sensor feature value currently selected by XI_PRM_SENSOR_FEATURE_SELECTOR.
 
+    //Properties of audio VideoIO
+    CV_CAP_SWITCH_AUDIO_STREAM = 1000, // Select audio or video
+    CV_CAP_PROP_BPS            = 1001, // Change bit_per_sample parametr for audio
 
     // Properties for Android cameras
     CV_CAP_PROP_ANDROID_FLASH_MODE = 8001,
@@ -352,7 +355,6 @@ enum
     CV_CAP_PROP_INTELPERC_DEPTH_FOCAL_LENGTH_HORZ     = 11006,
     CV_CAP_PROP_INTELPERC_DEPTH_FOCAL_LENGTH_VERT     = 11007,
 
-    CV_CAP_SWITCH_AUDIO_STREAM = 999999,
 
     // Intel PerC streams
     CV_CAP_INTELPERC_DEPTH_GENERATOR = 1 << 29,
