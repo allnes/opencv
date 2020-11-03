@@ -87,9 +87,12 @@ public:
 private:
     void get_test_data_from_bin_file()
     {
-        std::ifstream file(findDataFile(root + backend.first + "/" + audio_name + "bin"), std::ios::binary);
+        std::ifstream file;
+        if(audio_format == "wav" || audio_format == "flac")
+            file.open(findDataFile(root + audio_name + "bin"), std::ios::binary);
+        else
+            file.open(findDataFile(root + backend.first + "/" + audio_name + "bin"), std::ios::binary);
         ASSERT_TRUE(file.is_open());
-
         char tmp;
         while (file.read(&tmp, sizeof(tmp)))
         {
@@ -132,6 +135,6 @@ TEST_P(AudioTestFixture, audio)
 }
 
 INSTANTIATE_TEST_CASE_P(/**/, AudioTestFixture, testing::Combine(testing::ValuesIn(bit_per_sample_1), testing::ValuesIn(number_channels), testing::ValuesIn(sampling_frequency), testing::ValuesIn(audio_format_1), testing::ValuesIn(backend)));
-//INSTANTIATE_TEST_CASE_P(/**/, AudioTestFixture, testing::Combine(testing::ValuesIn(bit_2), testing::ValuesIn(channels), testing::ValuesIn(hz), testing::ValuesIn(audio_format_2)));
+//INSTANTIATE_TEST_CASE_P(/**/, AudioTestFixture, testing::Combine(testing::ValuesIn(bit_per_sample_2), testing::ValuesIn(number_channels), testing::ValuesIn(sampling_frequency), testing::ValuesIn(audio_format_2), testing::ValuesIn(backend)));
 
 }} //namespace
