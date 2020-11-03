@@ -24,7 +24,7 @@ int sampling_frequency[] =
 
 std::string audio_format_1[] =
 {
-    "wav", "mp4", "mp3", "aac", "m4a", "wma",//"ogg"
+    "wav", "mp4", "mp3", "aac", "m4a", "wma", "flac"//"ogg"
 };
 
 std::string audio_format_2[] =
@@ -38,6 +38,11 @@ std::pair<std::string, int> backend[] =
 };
 
 typedef std::tuple<int, int, int, std::string, std::pair<std::string, int> > Param;
+
+TEST(Audio, generate_test_data)
+{
+    
+}
 
 class AudioTestFixture : public testing::TestWithParam <Param>
 {
@@ -64,6 +69,8 @@ public:
     root("audio/"+ audio_format + "/"),
     audio_name("test_" + std::to_string(bit_per_sample) + "bit_" + std::to_string(number_channels) + "channels_" + std::to_string(sampling_frequency) + "hz.") 
     { 
+        if(audio_format == "flac" && (bit_per_sample == 8 || bit_per_sample == 32))
+            throw SkipTestException("flac codec is not supported 8 and 32 bps - SKIP");
         get_test_data_from_bin_file();
         bit_per_channel = (int)bin.size()/number_channels;
         switch(bit_per_sample)
@@ -89,9 +96,13 @@ private:
     {
         std::ifstream file;
         if(audio_format == "wav" || audio_format == "flac")
+        {
             file.open(findDataFile(root + audio_name + "bin"), std::ios::binary);
+        }
         else
+        {
             file.open(findDataFile(root + backend.first + "/" + audio_name + "bin"), std::ios::binary);
+        }
         ASSERT_TRUE(file.is_open());
         char tmp;
         while (file.read(&tmp, sizeof(tmp)))
