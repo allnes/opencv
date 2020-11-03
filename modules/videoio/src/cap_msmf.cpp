@@ -164,13 +164,13 @@ struct MediaType
     UINT32 aspectRatioDenom;
     UINT32 sampleSize;
     UINT32 interlaceMode;
+    UINT32 bit_per_sample;
+    UINT32 nChannels;
     GUID majorType; // video or audio
     GUID subType; // fourCC
     _ComPtr<IMFMediaType> Type;
-    WAVEFORMATEX* pWav;
     MediaType(IMFMediaType *pType = 0) :
         Type(pType),
-        pWav(NULL),
         width(0), height(0),
         stride(0),
         isFixedSize(true),
@@ -178,20 +178,31 @@ struct MediaType
         aspectRatioNum(1), aspectRatioDenom(1),
         sampleSize(0),
         interlaceMode(0),
+        bit_per_sample(0),
+        nChannels(0),
         majorType({ 0 }),//MFMediaType_Video
         subType({ 0 })
     {
         if (pType)
         {
-            MFGetAttributeSize(pType, MF_MT_FRAME_SIZE, &width, &height);
-            pType->GetUINT32(MF_MT_DEFAULT_STRIDE, (UINT32*)&stride); // value is stored as UINT32 but should be casted to INT3)
-            pType->GetUINT32(MF_MT_FIXED_SIZE_SAMPLES, &isFixedSize);
-            MFGetAttributeRatio(pType, MF_MT_FRAME_RATE, &frameRateNum, &frameRateDenom);
-            MFGetAttributeRatio(pType, MF_MT_PIXEL_ASPECT_RATIO, &aspectRatioNum, &aspectRatioDenom);
-            pType->GetUINT32(MF_MT_SAMPLE_SIZE, &sampleSize);
-            pType->GetUINT32(MF_MT_INTERLACE_MODE, &interlaceMode);
             pType->GetGUID(MF_MT_MAJOR_TYPE, &majorType);
             pType->GetGUID(MF_MT_SUBTYPE, &subType);
+            if (majorType == MFMediaType_Audio)
+            {
+                pType->GetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, &bit_per_sample);
+                pType->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &nChannels);
+            }
+            else 
+            {
+                MFGetAttributeSize(pType, MF_MT_FRAME_SIZE, &width, &height);
+                pType->GetUINT32(MF_MT_DEFAULT_STRIDE, (UINT32*)&stride); // value is stored as UINT32 but should be casted to INT3)
+                pType->GetUINT32(MF_MT_FIXED_SIZE_SAMPLES, &isFixedSize);
+                MFGetAttributeRatio(pType, MF_MT_FRAME_RATE, &frameRateNum, &frameRateDenom);
+                MFGetAttributeRatio(pType, MF_MT_PIXEL_ASPECT_RATIO, &aspectRatioNum, &aspectRatioDenom);
+                pType->GetUINT32(MF_MT_SAMPLE_SIZE, &sampleSize);
+                pType->GetUINT32(MF_MT_INTERLACE_MODE, &interlaceMode);            
+                pType->GetUINT32(MF_MT_INTERLACE_MODE, &interlaceMode);
+            }      
         }
     }
     static MediaType createDefault()
@@ -214,6 +225,10 @@ struct MediaType
             MFSetAttributeSize(res.Get(), MF_MT_FRAME_SIZE, width, height);
         if (stride != 0)
             res->SetUINT32(MF_MT_DEFAULT_STRIDE, stride);
+        if (bit_per_sample != 0)
+            res->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, bit_per_sample);
+        if (nChannels != 0)
+            res->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, nChannels);
         res->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, isFixedSize);
         if (frameRateNum != 0 || frameRateDenom != 0)
             MFSetAttributeRatio(res.Get(), MF_MT_FRAME_RATE, frameRateNum, frameRateDenom);
@@ -222,6 +237,20 @@ struct MediaType
         if (sampleSize > 0)
             res->SetUINT32(MF_MT_SAMPLE_SIZE, sampleSize);
         res->SetUINT32(MF_MT_INTERLACE_MODE, interlaceMode);
+        if (majorType != GUID())
+            res->SetGUID(MF_MT_MAJOR_TYPE, majorType);
+        if (subType != GUID())
+            res->SetGUID(MF_MT_SUBTYPE, subType);
+        return res;
+    }
+    _ComPtr<IMFMediaType> createMediaType_Audio() const
+    {
+        _ComPtr<IMFMediaType> res;
+        MFCreateMediaType(&res);
+        if (bit_per_sample != 0)
+            res->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, bit_per_sample);
+        if (nChannels != 0)
+            res->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, nChannels);
         if (majorType != GUID())
             res->SetGUID(MF_MT_MAJOR_TYPE, majorType);
         if (subType != GUID())
@@ -625,6 +654,7 @@ protected:
     DWORD dwStreamIndex;
     MediaType nativeFormat;
     MediaType captureFormat;
+    MediaType captureFormat_audio;
     bool switch_mediatype;
     int bit_per_sample;
     int outputFormat;
@@ -680,7 +710,11 @@ void CvCapture_MSMF::close()
 bool CvCapture_MSMF::initStream(DWORD streamID, const MediaType& mt)
 {
     CV_LOG_DEBUG(NULL, "Init stream " << streamID << " with MediaType " << mt);
-    _ComPtr<IMFMediaType> mediaTypeOut = mt.createMediaType();
+    _ComPtr<IMFMediaType> mediaTypeOut;
+    if(!switch_mediatype)
+        mediaTypeOut= mt.createMediaType();
+    else
+        mediaTypeOut= mt.createMediaType_Audio();
     if (FAILED(videoFileSource->SetStreamSelection((DWORD)MF_SOURCE_READER_ALL_STREAMS, false)))
     {
         CV_LOG_WARNING(NULL, "Failed to reset streams");
@@ -707,7 +741,14 @@ bool CvCapture_MSMF::initStream(DWORD streamID, const MediaType& mt)
         CV_LOG_WARNING(NULL, "Failed to set mediaType (stream " << streamID << ", " << mt << "(HRESULT " << hr << ")");
         return false;
     }
-    captureFormat = mt;
+    if(!switch_mediatype) 
+    {
+        captureFormat = mt;
+    }
+    else
+    {
+        captureFormat_audio = mt;
+    }
     return true;
 }
 
@@ -797,9 +838,9 @@ bool CvCapture_MSMF::configureOutput(MediaType newType, cv::uint32_t outFormat)
 {
     FormatStorage formats;
     formats.read(videoFileSource.Get());
-    std::pair<FormatStorage::MediaID, MediaType> bestMatch; //= formats.findBestVideoFormat(newType);
+    std::pair<FormatStorage::MediaID, MediaType> bestMatch;
     if(!switch_mediatype)
-       bestMatch = formats.findBestVideoFormat(newType);
+        bestMatch = formats.findBestVideoFormat(newType);
     else
         bestMatch = formats.findBestAudioFormat(newType);
     if (bestMatch.second.isEmpty() && !(switch_mediatype))
@@ -810,85 +851,48 @@ bool CvCapture_MSMF::configureOutput(MediaType newType, cv::uint32_t outFormat)
     dwStreamIndex = bestMatch.first.stream;
     nativeFormat = bestMatch.second;
     MediaType newFormat = nativeFormat;
-    if (convertFormat && !(switch_mediatype))
+    if (convertFormat) 
     {
-        switch (outFormat)
+        if (!switch_mediatype)
         {
-        case CV_CAP_MODE_BGR:
-        case CV_CAP_MODE_RGB:
-            newFormat.subType = captureMode == MODE_HW ? MFVideoFormat_RGB32 : MFVideoFormat_RGB24;
-            newFormat.stride = (captureMode == MODE_HW ? 4 : 3) * newFormat.width;
-            newFormat.sampleSize = newFormat.stride * newFormat.height;
-            break;
-        case CV_CAP_MODE_GRAY:
-            newFormat.subType = MFVideoFormat_YUY2;
-            newFormat.stride = newFormat.width;
-            newFormat.sampleSize = newFormat.stride * newFormat.height * 3 / 2;
-            break;
-        case CV_CAP_MODE_YUYV:
-            newFormat.subType = MFVideoFormat_YUY2;
-            newFormat.stride = 2 * newFormat.width;
-            newFormat.sampleSize = newFormat.stride * newFormat.height;
-            break;
-        default:
-            return false;
+            switch (outFormat)
+            {
+            case CV_CAP_MODE_BGR:
+            case CV_CAP_MODE_RGB:
+                newFormat.subType = captureMode == MODE_HW ? MFVideoFormat_RGB32 : MFVideoFormat_RGB24;
+                newFormat.stride = (captureMode == MODE_HW ? 4 : 3) * newFormat.width;
+                newFormat.sampleSize = newFormat.stride * newFormat.height;
+                break;
+            case CV_CAP_MODE_GRAY:
+                newFormat.subType = MFVideoFormat_YUY2;
+                newFormat.stride = newFormat.width;
+                newFormat.sampleSize = newFormat.stride * newFormat.height * 3 / 2;
+                break;
+            case CV_CAP_MODE_YUYV:
+                newFormat.subType = MFVideoFormat_YUY2;
+                newFormat.stride = 2 * newFormat.width;
+                newFormat.sampleSize = newFormat.stride * newFormat.height;
+                break;
+            default:
+                return false;
+            }
+            newFormat.interlaceMode = MFVideoInterlace_Progressive;
+            newFormat.isFixedSize = true;
+            if (nativeFormat.subType == MFVideoFormat_MP43) //Unable to estimate FPS for MP43
+                newFormat.frameRateNum = 0;
         }
-        newFormat.interlaceMode = MFVideoInterlace_Progressive;
-        newFormat.isFixedSize = true;
-        if (nativeFormat.subType == MFVideoFormat_MP43) //Unable to estimate FPS for MP43
-            newFormat.frameRateNum = 0;
-    }
-    if(switch_mediatype) 
-    {   
-        newFormat.subType = MFAudioFormat_PCM;
-
-        UINT32 cbFormat = 0; 
-        IMFMediaType *pPartialType = NULL;
-        
-        HRESULT hr = MFCreateMediaType(&pPartialType);
-        if (SUCCEEDED(hr))
-        {
-            hr = pPartialType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
-        }
-        if (SUCCEEDED(hr))
-        {
-            hr = pPartialType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
-        }
-        if (SUCCEEDED(hr))
-        {
-            hr = pPartialType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, bit_per_sample);
-        } 
-        if (SUCCEEDED(hr))
-        {
-            hr = pPartialType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
-        }
-        if (SUCCEEDED(hr))
-        {
-            hr = videoFileSource.Get()->SetCurrentMediaType(bestMatch.first.stream, NULL, pPartialType);
-        }
-        if (SUCCEEDED(hr))
-        {
-            hr = videoFileSource.Get()->SetStreamSelection(bestMatch.first.stream, TRUE);
-        }
-        if (SUCCEEDED(hr))
+        else
         {   
-            hr = videoFileSource.Get()->GetCurrentMediaType(bestMatch.first.stream, nativeFormat.Type.operator&(1));
+            newFormat.majorType = MFMediaType_Audio;
+            newFormat.subType = MFAudioFormat_PCM;
+            newFormat.bit_per_sample = bit_per_sample;
         }
-        if (SUCCEEDED(hr))
-        {
-            hr = MFCreateWaveFormatExFromMFMediaType(nativeFormat.Type.Get(), &(nativeFormat.pWav), &cbFormat);
-        }            
-        std::cout << "wFormatTag " << nativeFormat.pWav->wFormatTag << std::endl;
-        std::cout << "wBitsPerSample " << nativeFormat.pWav->wBitsPerSample << std::endl;
-        std::cout << "nChannels " << nativeFormat.pWav->nChannels << std::endl;
-        std::cout << "nBlockAlign " << nativeFormat.pWav->nBlockAlign<< std::endl;
-        std::cout << "nSamplesPerSec " << nativeFormat.pWav->nSamplesPerSec << std::endl; 
-        std::cout << "nAvgBytesPerSec " << nativeFormat.pWav->nAvgBytesPerSec<< std::endl;
     }
-    // we select native format first and then our requested format (related issue #12822)
-    if (!newType.isEmpty()) // camera input
-        initStream(dwStreamIndex, nativeFormat);
-    return initStream(dwStreamIndex, newFormat);
+        // we select native format first and then our requested format (related issue #12822)
+        if (!newType.isEmpty() && !switch_mediatype) // camera input
+            initStream(dwStreamIndex, nativeFormat);
+        return initStream(dwStreamIndex, newFormat);
+    
 }
 
 bool CvCapture_MSMF::open(int index)
@@ -1162,32 +1166,33 @@ bool CvCapture_MSMF::retrieveFrame(int, cv::OutputArray frame)
         else
         {      
             
-            switch(nativeFormat.pWav->wBitsPerSample)
+            switch(captureFormat_audio.bit_per_sample)
             {
             case 0:
                 //std::cout << cursize << std::endl;
-                cv::Mat(cursize/(nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_8U, ptr).copyTo(frame);
+                cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 break;
             case 8:
                 //std::cout << cursize << std::endl;
-                cv::Mat(cursize/(nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_8S, ptr).copyTo(frame);
-                //cv::Mat(cursize/(nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_8U, ptr).copyTo(frame);
+                cv::Mat(cursize/(captureFormat_audio.nChannels), captureFormat_audio.nChannels , CV_8S, ptr).copyTo(frame);
+                //cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 break;
             case 16:
                 //std::cout << cursize << std::endl;
-                cv::Mat(cursize/(2*nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_16S, ptr).copyTo(frame);
-                //cv::Mat(cursize/(nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_8U, ptr).copyTo(frame);
+                cv::Mat(cursize/(2*captureFormat_audio.nChannels), captureFormat_audio.nChannels , CV_16S, ptr).copyTo(frame);
+                //cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 break;
             case 24:
                 //std::cout << cursize << std::endl;
                 //std::cout << "Sorry, 24 bit per sample don't yet support. " << std::endl;
-                cv::Mat(cursize/(nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_8U, ptr).copyTo(frame);
+                cv::Mat(cursize/(captureFormat_audio.nChannels), captureFormat_audio.nChannels , CV_8U, ptr).copyTo(frame);
+                //cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 //cv::Mat(cursize/(3*nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_24S, ptr).copyTo(frame); CV_8UC3
                 break;
             case 32:
                 //std::cout << cursize << std::endl;
-                cv::Mat(cursize/(4*nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_32S, ptr).copyTo(frame);
-                //cv::Mat(cursize/(nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_8U, ptr).copyTo(frame);
+                cv::Mat(cursize/(4*captureFormat_audio.nChannels), captureFormat_audio.nChannels , CV_32S, ptr).copyTo(frame);
+                //cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 break;
             default:
                 frame.release();
