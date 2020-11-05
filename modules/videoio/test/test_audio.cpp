@@ -2,14 +2,9 @@
 
 namespace opencv_test { namespace {
 
-int bit_per_sample_1[] = 
+int bit_per_sample[] = 
 {
     8, 16, 24, 32
-};
-
-int bit_per_sample_2[] = 
-{
-    16, 24
 };
 
 int number_channels[] = 
@@ -22,14 +17,9 @@ int sampling_frequency[] =
     44100
 };
 
-std::string audio_format_1[] =
+std::string audio_format[] =
 {
     "wav", "mp4", "mp3", "aac", "m4a", "wma", "flac"//"ogg"
-};
-
-std::string audio_format_2[] =
-{
-    "flac"
 };
 
 std::pair<std::string, int> backend[] =
@@ -77,7 +67,10 @@ public:
     { 
         get_test_data_from_bin_file();
         if(bin.empty())
-            std::cout << "Audio codec don't support this param \n";
+        {
+            SkipTestException();
+            std::cout << "Audio codec don't support this param. \n" << "This test skiped. \n";
+        }
         bit_per_channel = (int)bin.size()/number_channels;
         switch(bit_per_sample)
         {
@@ -152,7 +145,6 @@ TEST_P(AudioTestFixture, audio)
     }
 }
 
-INSTANTIATE_TEST_CASE_P(/**/, AudioTestFixture, testing::Combine(testing::ValuesIn(bit_per_sample_1), testing::ValuesIn(number_channels), testing::ValuesIn(sampling_frequency), testing::ValuesIn(audio_format_1), testing::ValuesIn(backend)));
-//INSTANTIATE_TEST_CASE_P(/**/, AudioTestFixture, testing::Combine(testing::ValuesIn(bit_per_sample_2), testing::ValuesIn(number_channels), testing::ValuesIn(sampling_frequency), testing::ValuesIn(audio_format_2), testing::ValuesIn(backend)));
+INSTANTIATE_TEST_CASE_P(/**/, AudioTestFixture, testing::Combine(testing::ValuesIn(bit_per_sample), testing::ValuesIn(number_channels), testing::ValuesIn(sampling_frequency), testing::ValuesIn(audio_format), testing::ValuesIn(backend)));
 
 }} //namespace
