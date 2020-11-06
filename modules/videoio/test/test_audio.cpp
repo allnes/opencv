@@ -2,9 +2,14 @@
 
 namespace opencv_test { namespace {
 
-int bit_per_sample[] = 
+int first_set_of_bit_per_sample[] = 
 {
     8, 16, 24, 32
+};
+
+int second_set_of_bit_per_sample[] = 
+{
+    16, 24
 };
 
 int number_channels[] = 
@@ -17,9 +22,14 @@ int sampling_frequency[] =
     44100
 };
 
-std::string audio_format[] =
+std::string first_set_of_audio_format[] =
 {
-    "wav", "mp4", "mp3", "aac", "m4a", "wma", "flac"//"ogg"
+    "wav", "mp4", "mp3", "aac", "m4a", "wma"//"ogg"
+};
+
+std::string second_set_of_audio_format[] =
+{
+    "flac"
 };
 
 std::pair<std::string, int> backend[] =
@@ -28,17 +38,6 @@ std::pair<std::string, int> backend[] =
 };
 
 typedef std::tuple<int, int, int, std::string, std::pair<std::string, int> > Param;
-
-TEST(Audio, generate_test_data)
-{
-    
-}
-
-class Environment : public testing::Environment {
- public:
-  // Override this to define how to set up the environment.
-  void SetUp() override {}
-};
 
 class AudioTestFixture : public testing::TestWithParam <Param>
 {
@@ -55,6 +54,9 @@ protected:
 
     Mat test_data_known;
     Mat test_data_received;
+    Mat frame;
+    Mat diff;
+    VideoCapture cap;
 public:    
     AudioTestFixture() : 
     bit_per_sample(get<0>(GetParam())), 
@@ -65,32 +67,18 @@ public:
     root("audio/"+ audio_format + "/"),
     audio_name("test_" + std::to_string(bit_per_sample) + "bit_" + std::to_string(number_channels) + "channels_" + std::to_string(sampling_frequency) + "hz.") 
     { 
+        configuration_videocapture();
         get_test_data_from_bin_file();
-        if(bin.empty())
-        {
-            SkipTestException();
-            std::cout << "Audio codec don't support this param. \n" << "This test skiped. \n";
-        }
-        bit_per_channel = (int)bin.size()/number_channels;
-        switch(bit_per_sample)
-        {
-            case 8:
-                test_data_known = Mat(bit_per_channel, number_channels, CV_8S, bin.data());
-                break;
-            case 16:
-                test_data_known = Mat(bit_per_channel/2, number_channels, CV_16S, bin.data());
-                break;
-            case 24:
-                test_data_known = Mat(bit_per_channel, number_channels, CV_8U, bin.data());
-                break;
-            case 32:
-                test_data_known = Mat(bit_per_channel/4, number_channels, CV_32S, bin.data());
-                break;
-            default:
-                break;       
-        } 
+        get_test_data_from_audio_file();
+        comparison();
     };
 private:
+    void configuration_videocapture()
+    {
+        ASSERT_TRUE(cap.open(findDataFile(root + audio_name + audio_format), backend.second));
+        ASSERT_TRUE(cap.set(CAP_SWITCH_AUDIO_STREAM,1));
+        ASSERT_TRUE(cap.set(CAP_PROP_BPS, bit_per_sample));
+    }
     void get_test_data_from_bin_file()
     {
         std::ifstream file;
@@ -109,21 +97,29 @@ private:
             bin.push_back(tmp);
         }
         file.close();
-    }
-};
 
-TEST_P(AudioTestFixture, audio) 
-{
-    Mat frame;
-    Mat diff;
-    VideoCapture cap;
-    int apiID = backend.second;
-    if(!(bin.empty()))
-    {
+        bit_per_channel = (int)bin.size()/number_channels;
+        switch(bit_per_sample)
+        {
+            case 8:
+                test_data_known = Mat(bit_per_channel, number_channels, CV_8S, bin.data());
+                break;
+            case 16:
+                test_data_known = Mat(bit_per_channel/2, number_channels, CV_16S, bin.data());
+                break;
+            case 24:
+                test_data_known = Mat(bit_per_channel, number_channels, CV_8U, bin.data());
+                break;
+            case 32:
+                test_data_known = Mat(bit_per_channel/4, number_channels, CV_32S, bin.data());
+                break;
+            default:
+                break;       
+        } 
         ASSERT_FALSE(test_data_known.empty());
-        ASSERT_TRUE(cap.open(findDataFile(root + audio_name + audio_format), apiID));
-        ASSERT_TRUE(cap.set(CAP_SWITCH_AUDIO_STREAM,1));
-        ASSERT_TRUE(cap.set(CAP_PROP_BPS, bit_per_sample));
+    }
+    void get_test_data_from_audio_file()
+    {
         for (;;)
         {
             cap.read(frame);
@@ -134,6 +130,9 @@ TEST_P(AudioTestFixture, audio)
             }
         }
         ASSERT_FALSE(test_data_received.empty());
+    }
+    void comparison()
+    {
         cv::compare(test_data_received, test_data_known, diff, cv::CMP_EQ);
         for(int i = 0; i < test_data_known.rows; i++)
         {
@@ -143,8 +142,16 @@ TEST_P(AudioTestFixture, audio)
             }  
         }
     }
-}
+};
 
-INSTANTIATE_TEST_CASE_P(/**/, AudioTestFixture, testing::Combine(testing::ValuesIn(bit_per_sample), testing::ValuesIn(number_channels), testing::ValuesIn(sampling_frequency), testing::ValuesIn(audio_format), testing::ValuesIn(backend)));
+class first_set_of_formats : public AudioTestFixture{};
+class second_set_of_formats : public AudioTestFixture{};
 
+TEST_P(first_set_of_formats, audio) {}
+TEST_P(second_set_of_formats, audio) {}
+
+INSTANTIATE_TEST_CASE_P(/**/, first_set_of_formats, 
+testing::Combine(testing::ValuesIn(first_set_of_bit_per_sample), testing::ValuesIn(number_channels), testing::ValuesIn(sampling_frequency), testing::ValuesIn(first_set_of_audio_format), testing::ValuesIn(backend)));
+INSTANTIATE_TEST_CASE_P(/**/, second_set_of_formats, 
+testing::Combine(testing::ValuesIn(second_set_of_bit_per_sample), testing::ValuesIn(number_channels), testing::ValuesIn(sampling_frequency), testing::ValuesIn(second_set_of_audio_format), testing::ValuesIn(backend)));
 }} //namespace
