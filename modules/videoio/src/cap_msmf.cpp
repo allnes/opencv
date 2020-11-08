@@ -217,7 +217,7 @@ struct MediaType
     {
         return width == 0 && height == 0;
     }
-    _ComPtr<IMFMediaType> createMediaType() const
+    _ComPtr<IMFMediaType> createMediaType_Video() const
     {
         _ComPtr<IMFMediaType> res;
         MFCreateMediaType(&res);
@@ -712,7 +712,7 @@ bool CvCapture_MSMF::initStream(DWORD streamID, const MediaType& mt)
     CV_LOG_DEBUG(NULL, "Init stream " << streamID << " with MediaType " << mt);
     _ComPtr<IMFMediaType> mediaTypeOut;
     if(!switch_mediatype)
-        mediaTypeOut= mt.createMediaType();
+        mediaTypeOut= mt.createMediaType_Video();
     else
         mediaTypeOut= mt.createMediaType_Audio();
     if (FAILED(videoFileSource->SetStreamSelection((DWORD)MF_SOURCE_READER_ALL_STREAMS, false)))
@@ -888,11 +888,10 @@ bool CvCapture_MSMF::configureOutput(MediaType newType, cv::uint32_t outFormat)
             newFormat.bit_per_sample = bit_per_sample;
         }
     }
-        // we select native format first and then our requested format (related issue #12822)
-        if (!newType.isEmpty() && !switch_mediatype) // camera input
-            initStream(dwStreamIndex, nativeFormat);
-        return initStream(dwStreamIndex, newFormat);
-    
+    // we select native format first and then our requested format (related issue #12822)
+    if (!newType.isEmpty() && !switch_mediatype) // camera input
+        initStream(dwStreamIndex, nativeFormat);
+    return initStream(dwStreamIndex, newFormat);
 }
 
 bool CvCapture_MSMF::open(int index)
@@ -942,11 +941,11 @@ bool CvCapture_MSMF::open(const cv::String& _filename)
         isOpen = true;
         sampleTime = 0;
         if (configureOutput(MediaType(), outputFormat))
-        {   
+        {           
+            filename = _filename;
             if(!switch_mediatype)
             {
                 frameStep = captureFormat.getFrameStep();
-                filename = _filename;
                 PROPVARIANT var;
                 HRESULT hr;
                 if (SUCCEEDED(hr = videoFileSource->GetPresentationAttribute((DWORD)MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION, &var)) &&
@@ -1009,7 +1008,7 @@ bool CvCapture_MSMF::grabFrame()
                 0,             // Flags.
                 &streamIndex,  // Receives the actual stream index.
                 &flags,        // Receives status flags.
-                &sampleTime,   // Receives the time stamp.
+                switch_mediatype ? NULL : &sampleTime,   // Receives the time stamp.
                 &videoSample   // Receives the sample or NULL.
             )))
                 break;
@@ -1121,7 +1120,7 @@ bool CvCapture_MSMF::retrieveFrame(int, cv::OutputArray frame)
                 break;
             }
         }   
-        
+
         if (!ptr)
             break;
         if(!switch_mediatype)
@@ -1165,34 +1164,22 @@ bool CvCapture_MSMF::retrieveFrame(int, cv::OutputArray frame)
         }
         else
         {      
-            
             switch(captureFormat_audio.bit_per_sample)
             {
             case 0:
-                //std::cout << cursize << std::endl;
                 cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 break;
             case 8:
-                //std::cout << cursize << std::endl;
                 cv::Mat(cursize/(captureFormat_audio.nChannels), captureFormat_audio.nChannels , CV_8S, ptr).copyTo(frame);
-                //cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 break;
             case 16:
-                //std::cout << cursize << std::endl;
                 cv::Mat(cursize/(2*captureFormat_audio.nChannels), captureFormat_audio.nChannels , CV_16S, ptr).copyTo(frame);
-                //cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 break;
             case 24:
-                //std::cout << cursize << std::endl;
-                //std::cout << "Sorry, 24 bit per sample don't yet support. " << std::endl;
                 cv::Mat(cursize/(captureFormat_audio.nChannels), captureFormat_audio.nChannels , CV_8U, ptr).copyTo(frame);
-                //cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
-                //cv::Mat(cursize/(3*nativeFormat.pWav->nChannels), nativeFormat.pWav->nChannels , CV_24S, ptr).copyTo(frame); CV_8UC3
                 break;
             case 32:
-                //std::cout << cursize << std::endl;
                 cv::Mat(cursize/(4*captureFormat_audio.nChannels), captureFormat_audio.nChannels , CV_32S, ptr).copyTo(frame);
-                //cv::Mat(cursize, 1 , CV_8U, ptr).copyTo(frame);
                 break;
             default:
                 frame.release();
@@ -1386,6 +1373,10 @@ double CvCapture_MSMF::getProperty( int property_id ) const
         case CV_CAP_PROP_ISO_SPEED:
         case CV_CAP_PROP_SETTINGS:
         case CV_CAP_PROP_BUFFERSIZE:
+        case CV_CAP_SWITCH_AUDIO_STREAM:
+            return switch_mediatype;
+        case CV_CAP_PROP_BPS:
+            return bit_per_sample;
         default:
             break;
         }
@@ -1527,12 +1518,22 @@ bool CvCapture_MSMF::setProperty( int property_id, double value )
         case CV_CAP_PROP_SETTINGS:
         case CV_CAP_PROP_BUFFERSIZE:
         case CV_CAP_SWITCH_AUDIO_STREAM:
-            (switch_mediatype == false) ? switch_mediatype = true : switch_mediatype = false;
-            return configureOutput(MediaType(), outputFormat);
+            if(value == 1)
+            {
+                switch_mediatype = true;
+                return configureOutput(MediaType(), outputFormat);
+            }
+            else if(value == 0)
+            {
+                switch_mediatype = false;
+                return configureOutput(MediaType(), outputFormat);
+            }     
+            else 
+                return false;
         case CV_CAP_PROP_BPS:
             if(value == 8 || value == 16 || value == 24 || value == 32)
             {
-                bit_per_sample = value;
+                bit_per_sample = static_cast<int>(value);
                 return configureOutput(MediaType(), outputFormat);
             }
             else
